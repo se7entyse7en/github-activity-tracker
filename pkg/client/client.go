@@ -73,7 +73,7 @@ func (a Activity) String() string {
 	for repo, activityBySubj := range a.ByRepo {
 		str.WriteString(fmt.Sprintf("- %s:\n", repo))
 		for subID, activityEvents := range activityBySubj {
-			str.WriteString(fmt.Sprintf("  * (%d) %s:\n", subID, a.subjectIDNameMap[subID]))
+			str.WriteString(fmt.Sprintf("  * (#%d) %s:\n", subID, a.subjectIDNameMap[subID]))
 			for i := len(activityEvents) - 1; i >= 0; i-- {
 				ae := activityEvents[i]
 				str.WriteString(fmt.Sprintf("    -> %s [%v]\n", ae.Type, ae.CreatedAt))
@@ -98,32 +98,36 @@ func (ae ActivityEvent) String() string {
 
 func (c *Client) GetActivity(ctx context.Context, publicOnly bool, since, to *time.Time) *Activity {
 	// TODO:
-	// - iterate over pages
 	// - honour `since` and `to` params
-	events, _, err := c.getActivity(ctx, publicOnly, nil)
-	if err != nil {
-		panic(err)
-	}
-
+	nextPage := -1
 	byRepo := make(map[string]map[int][]*ActivityEvent)
 	subjectIDNameMap := make(map[int]string)
-	for _, ev := range events {
-		ae := c.rawEventToActivity(ev)
-		if ae == nil {
-			continue
+
+	for nextPage != 0 {
+		events, resp, err := c.getActivity(ctx, publicOnly, nextPage)
+		if err != nil {
+			panic(err)
 		}
 
-		subjectIDNameMap[ae.SubjectID] = ae.Subject
+		nextPage = resp.NextPage
+		for _, ev := range events {
+			ae := c.rawEventToActivity(ev)
+			if ae == nil {
+				continue
+			}
 
-		if _, ok := byRepo[ae.RepoName]; !ok {
-			byRepo[ae.RepoName] = make(map[int][]*ActivityEvent)
+			subjectIDNameMap[ae.SubjectID] = ae.Subject
+
+			if _, ok := byRepo[ae.RepoName]; !ok {
+				byRepo[ae.RepoName] = make(map[int][]*ActivityEvent)
+			}
+
+			if _, ok := byRepo[ae.RepoName][ae.SubjectID]; !ok {
+				byRepo[ae.RepoName][ae.SubjectID] = make([]*ActivityEvent, 0)
+			}
+
+			byRepo[ae.RepoName][ae.SubjectID] = append(byRepo[ae.RepoName][ae.SubjectID], ae)
 		}
-
-		if _, ok := byRepo[ae.RepoName][ae.SubjectID]; !ok {
-			byRepo[ae.RepoName][ae.SubjectID] = make([]*ActivityEvent, 0)
-		}
-
-		byRepo[ae.RepoName][ae.SubjectID] = append(byRepo[ae.RepoName][ae.SubjectID], ae)
 	}
 
 	return &Activity{
@@ -132,9 +136,16 @@ func (c *Client) GetActivity(ctx context.Context, publicOnly bool, since, to *ti
 	}
 }
 
-func (c *Client) getActivity(ctx context.Context, publicOnly bool, opt *gh.ListOptions) ([]*gh.Event, *gh.Response, error) {
-	return c.ghClient.Activity.ListEventsPerformedByUser(
-		ctx, c.User, publicOnly, opt)
+func (c *Client) getActivity(ctx context.Context, publicOnly bool, page int) ([]*gh.Event, *gh.Response, error) {
+	var listOpts *gh.ListOptions
+	if page > 0 {
+		listOpts = &gh.ListOptions{Page: page}
+	}
+
+	events, resp, err := c.ghClient.Activity.ListEventsPerformedByUser(
+		ctx, c.User, publicOnly, listOpts)
+
+	return events, resp, err
 }
 
 func (c *Client) rawEventToActivity(ev *gh.Event) *ActivityEvent {
