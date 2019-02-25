@@ -97,8 +97,6 @@ func (ae ActivityEvent) String() string {
 }
 
 func (c *Client) GetActivity(ctx context.Context, publicOnly bool, since, to *time.Time) *Activity {
-	// TODO:
-	// - honour `since` and `to` params
 	nextPage := -1
 	byRepo := make(map[string]map[int][]*ActivityEvent)
 	subjectIDNameMap := make(map[int]string)
@@ -111,6 +109,15 @@ func (c *Client) GetActivity(ctx context.Context, publicOnly bool, since, to *ti
 
 		nextPage = resp.NextPage
 		for _, ev := range events {
+			if to != nil && (*ev.CreatedAt).After(*to) {
+				continue
+			}
+
+			if since != nil && (*ev.CreatedAt).Before(*since) {
+				nextPage = 0
+				break
+			}
+
 			ae := c.rawEventToActivity(ev)
 			if ae == nil {
 				continue
