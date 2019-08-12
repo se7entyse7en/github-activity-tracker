@@ -11,16 +11,22 @@ import (
 )
 
 var (
-	user     string
-	sinceStr string
-	toStr    string
+	user        string
+	sinceStr    string
+	toStr       string
+	accessToken string
 )
 
 var rootCmd = &cobra.Command{
 	Use:   "github-activity-tracker",
 	Short: "Generates a report for a user's public activity",
 	Run: func(cmd *cobra.Command, args []string) {
-		c := client.NewClient(user)
+		var c client.Client
+		if accessToken != "" {
+			c = client.NewAuthClient(user, accessToken)
+		} else {
+			c = client.NewClient(user)
+		}
 
 		since, err := time.Parse(time.RFC3339, sinceStr)
 
@@ -45,6 +51,7 @@ func init() {
 	rootCmd.Flags().StringVarP(&user, "user", "u", "", "User")
 	rootCmd.Flags().StringVarP(&sinceStr, "since", "s", "", "Since in RFC3339 format")
 	rootCmd.Flags().StringVarP(&toStr, "to", "t", "", "To in RFC3339 format")
+	rootCmd.Flags().StringVarP(&accessToken, "access-token", "a", "", "GitHub access token for private user history (optional)")
 }
 
 func Execute() {
